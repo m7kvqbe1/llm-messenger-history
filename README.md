@@ -38,10 +38,10 @@ Exiting chat.
 
 ## Customizations
 
-    •	Adjust Temperature: Modify the temperature parameter in facebook_chatbot.py to control the randomness of the AI’s responses.
+Adjust Temperature: Modify the temperature parameter in facebook_chatbot.py to control the randomness of the AI’s responses:
 
 `llm = OpenAI(temperature=0.5, openai_api_key=OPENAI_API_KEY)`
 
-    •	Change Chunk Size: Adjust chunk_size and chunk_overlap in the text splitter to optimize performance.
+Change Chunk Size: Adjust chunk_size and chunk_overlap in the text splitter to optimize performance:
 
 `text_splitter = RecursiveCharacterTextSplitter(chunk_size=500, chunk_overlap=100)`
