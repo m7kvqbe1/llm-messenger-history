@@ -17,16 +17,12 @@ The chatbot can answer questions about your past conversations.
 
 ## Setup Instructions
 
-Run the script using:
-
 ```
 python llm_messenger_history.py
 ```
 
-Usage
-
-    •	Start a Conversation: After running the script, type your questions to interact with the chatbot.
-    •	Exit: Type exit or quit to end the session.
+- Start a Conversation: After running the script, type your questions to interact with the chatbot.
+- Exit: Type exit or quit to end the session.
 
 ## Example Interaction
 
