@@ -8,8 +8,16 @@ from langchain.vectorstores import FAISS
 from langchain.chains import ConversationalRetrievalChain
 from langchain.chat_models import ChatOpenAI
 from dotenv import load_dotenv
+import argparse
 
 def main():
+    parser = argparse.ArgumentParser(description='Facebook Messenger Chat Analysis')
+    parser.add_argument('--model', 
+                       choices=['gpt-3.5-turbo', 'gpt-4'],
+                       default='gpt-3.5-turbo',
+                       help='Choose the OpenAI model to use (default: gpt-3.5-turbo)')
+    args = parser.parse_args()
+
     load_dotenv()
 
     OPENAI_API_KEY = os.getenv("OPENAI_API_KEY")
@@ -56,16 +64,16 @@ def main():
             batch_vectorstore = FAISS.from_documents(batch_docs, embeddings)
             vectorstore.merge_from(batch_vectorstore)
 
-        if end_idx < len(docs):
-            print("Waiting 0.5 seconds before next batch...")
-            time.sleep(0.5)
+        # if end_idx < len(docs):
+        #     print("Waiting 100ms seconds before next batch...")
+        #     time.sleep(0.1)
 
     print("Vector store creation completed.")
 
-    print("Setting up conversational AI...")
+    print(f"Setting up conversational AI using {args.model}...")
     llm = ChatOpenAI(
         temperature=0.7,
-        model_name="gpt-3.5-turbo",
+        model_name=args.model,
         openai_api_key=OPENAI_API_KEY
     )
     qa = ConversationalRetrievalChain.from_llm(
