@@ -1,3 +1,4 @@
+import json
 import os
 import time
 from langchain.document_loaders import FacebookChatLoader
@@ -89,9 +90,9 @@ def main():
             print(f"\nAI: {answer}\n")
 
             if "source_documents" in result:
-                print("\nSources:")
-                for doc in result["source_documents"][:3]:
-                    print(f"- {doc.page_content[:200]}...\n")
+                sources = [doc.page_content[:400] for doc in result["source_documents"][:3]]
+                sources_json = json.dumps({"sources": sources}, indent=2)
+                print(f"\nSources: {sources_json}")
 
             chat_history.append((query, answer))
 
