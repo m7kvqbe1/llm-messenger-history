@@ -23,8 +23,13 @@ def main():
         raise FileNotFoundError(f"The folder path {folder_path} does not exist.")
 
     print("Loading Facebook Messenger data...")
-    loader = FacebookChatLoader(path=folder_path)
-    documents = loader.load()
+    documents = []
+    for root, dirs, files in os.walk(folder_path):
+        for file in files:
+            if file.endswith('.json'):
+                file_path = os.path.join(root, file)
+                loader = FacebookChatLoader(path=file_path)
+                documents.extend(loader.load())
     print(f"Loaded {len(documents)} documents.")
 
     print("Splitting documents into chunks...")
