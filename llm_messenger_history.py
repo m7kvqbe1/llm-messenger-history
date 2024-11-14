@@ -57,8 +57,8 @@ def main():
             vectorstore.merge_from(batch_vectorstore)
 
         if end_idx < len(docs):
-            print("Waiting 20 seconds before next batch...")
-            time.sleep(20)
+            print("Waiting 0.5 seconds before next batch...")
+            time.sleep(0.5)
 
     print("Vector store creation completed.")
 
