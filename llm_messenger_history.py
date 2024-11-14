@@ -1,4 +1,5 @@
 import os
+import time
 from langchain.document_loaders import FacebookChatLoader
 from langchain.text_splitter import RecursiveCharacterTextSplitter
 from langchain.embeddings.openai import OpenAIEmbeddings
@@ -39,8 +40,26 @@ def main():
 
     print("Creating embeddings and building vector store...")
     embeddings = OpenAIEmbeddings(openai_api_key=OPENAI_API_KEY)
-    vectorstore = FAISS.from_documents(docs, embeddings)
-    print("Vector store created.")
+
+    batch_size = 100
+    vectorstore = None
+
+    for i in range(0, len(docs), batch_size):
+        end_idx = min(i + batch_size, len(docs))
+        print(f"Processing batch {i//batch_size + 1} of {len(docs)//batch_size + 1}...")
+
+        batch_docs = docs[i:end_idx]
+        if vectorstore is None:
+            vectorstore = FAISS.from_documents(batch_docs, embeddings)
+        else:
+            batch_vectorstore = FAISS.from_documents(batch_docs, embeddings)
+            vectorstore.merge_from(batch_vectorstore)
+
+        if end_idx < len(docs):
+            print("Waiting 20 seconds before next batch...")
+            time.sleep(20)
+
+    print("Vector store creation completed.")
 
     print("Setting up conversational AI...")
     llm = OpenAI(temperature=0.7, openai_api_key=OPENAI_API_KEY)
