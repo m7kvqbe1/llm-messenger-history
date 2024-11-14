@@ -9,6 +9,7 @@ from langchain.chains import ConversationalRetrievalChain
 from langchain.chat_models import ChatOpenAI
 from dotenv import load_dotenv
 import argparse
+from datetime import datetime
 
 def main():
     parser = argparse.ArgumentParser(description='Facebook Messenger Chat Analysis')
@@ -50,25 +51,58 @@ def main():
     print("Creating embeddings and building vector store...")
     embeddings = OpenAIEmbeddings(openai_api_key=OPENAI_API_KEY)
 
+    tokens_per_chunk = 250
+    rate_limit_tpm = 1000000
     batch_size = 100
+    total_chunks = len(docs)
+    total_tokens = total_chunks * tokens_per_chunk
+
+    tokens_per_batch = batch_size * tokens_per_chunk
+    batches_per_minute = rate_limit_tpm / tokens_per_batch
+    optimal_wait_time = (60 / batches_per_minute) * 1.1
+
+    print(f"\nProcessing {total_chunks} chunks (~{total_tokens:,} tokens)")
+    print(f"Estimated optimal wait time between batches: {optimal_wait_time:.2f}s")
+    print(f"Estimated total processing time: {(total_chunks/batch_size * optimal_wait_time)/60:.1f} minutes\n")
+
     vectorstore = None
+    wait_time = optimal_wait_time
+    start_time = datetime.now()
 
     for i in range(0, len(docs), batch_size):
         end_idx = min(i + batch_size, len(docs))
-        print(f"Processing batch {i//batch_size + 1} of {len(docs)//batch_size + 1}...")
+        batch_num = i//batch_size + 1
+        total_batches = len(docs)//batch_size + 1
+        elapsed_time = (datetime.now() - start_time).total_seconds() / 60
 
-        batch_docs = docs[i:end_idx]
-        if vectorstore is None:
-            vectorstore = FAISS.from_documents(batch_docs, embeddings)
-        else:
-            batch_vectorstore = FAISS.from_documents(batch_docs, embeddings)
-            vectorstore.merge_from(batch_vectorstore)
+        print(f"Batch {batch_num}/{total_batches} ({(batch_num/total_batches)*100:.1f}%) - "
+              f"Elapsed: {elapsed_time:.1f}m")
 
-        # if end_idx < len(docs):
-        #     print("Waiting 100ms seconds before next batch...")
-        #     time.sleep(0.1)
+        max_retries = 3
+        for attempt in range(max_retries):
+            try:
+                batch_docs = docs[i:end_idx]
+                if vectorstore is None:
+                    vectorstore = FAISS.from_documents(batch_docs, embeddings)
+                else:
+                    batch_vectorstore = FAISS.from_documents(batch_docs, embeddings)
+                    vectorstore.merge_from(batch_vectorstore)
+                break
+            except Exception as e:
+                if "Rate limit" in str(e) and attempt < max_retries - 1:
+                    wait_time *= 2
+                    print(f"Rate limit hit. Waiting {wait_time:.1f}s before retry...")
+                    time.sleep(wait_time)
+                    wait_time = max(optimal_wait_time, wait_time * 0.75)
+                else:
+                    raise e
 
-    print("Vector store creation completed.")
+        if end_idx < len(docs):
+            print(f"Waiting {wait_time:.1f}s...")
+            time.sleep(wait_time)
+
+    total_time = (datetime.now() - start_time).total_seconds() / 60
+    print(f"\nVector store creation completed in {total_time:.1f} minutes")
 
     print(f"Setting up conversational AI using {args.model}...")
     llm = ChatOpenAI(
