@@ -5,7 +5,7 @@ from langchain.text_splitter import RecursiveCharacterTextSplitter
 from langchain.embeddings.openai import OpenAIEmbeddings
 from langchain.vectorstores import FAISS
 from langchain.chains import ConversationalRetrievalChain
-from langchain.llms import OpenAI
+from langchain.chat_models import ChatOpenAI
 from dotenv import load_dotenv
 
 def main():
@@ -62,8 +62,16 @@ def main():
     print("Vector store creation completed.")
 
     print("Setting up conversational AI...")
-    llm = OpenAI(temperature=0.7, openai_api_key=OPENAI_API_KEY)
-    qa = ConversationalRetrievalChain.from_llm(llm, vectorstore.as_retriever())
+    llm = ChatOpenAI(
+        temperature=0.7,
+        model_name="gpt-3.5-turbo",
+        openai_api_key=OPENAI_API_KEY
+    )
+    qa = ConversationalRetrievalChain.from_llm(
+        llm,
+        vectorstore.as_retriever(),
+        return_source_documents=True
+    )
 
     def chat():
         print("Chat with your Facebook Messenger AI (type 'exit' to quit):")
@@ -75,9 +83,16 @@ def main():
                 break
             if not query.strip():
                 continue
+
             result = qa({"question": query, "chat_history": chat_history})
             answer = result["answer"]
-            print(f"AI: {answer}")
+            print(f"\nAI: {answer}\n")
+
+            if "source_documents" in result:
+                print("\nSources:")
+                for doc in result["source_documents"][:3]:
+                    print(f"- {doc.page_content[:200]}...\n")
+
             chat_history.append((query, answer))
 
     chat()
