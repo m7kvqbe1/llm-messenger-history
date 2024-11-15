@@ -10,6 +10,29 @@ from langchain.chat_models import ChatOpenAI
 from dotenv import load_dotenv
 import argparse
 from datetime import datetime
+from langchain.prompts import PromptTemplate
+from langchain.callbacks import get_openai_callback
+from typing import List, Dict
+import tiktoken
+
+def estimate_tokens(text: str) -> int:
+    """Estimate the number of tokens in a text."""
+    encoding = tiktoken.encoding_for_model("gpt-4")
+    return len(encoding.encode(text))
+
+def truncate_docs_to_token_limit(docs: List[Dict], max_tokens: int = 6000) -> List[Dict]:
+    """Truncate documents to fit within token limit, leaving room for prompt and response."""
+    total_tokens = 0
+    truncated_docs = []
+    
+    for doc in docs:
+        doc_tokens = estimate_tokens(doc.page_content)
+        if total_tokens + doc_tokens > max_tokens:
+            break
+        truncated_docs.append(doc)
+        total_tokens += doc_tokens
+    
+    return truncated_docs
 
 def main():
     parser = argparse.ArgumentParser(description='Facebook Messenger Chat Analysis')
@@ -44,7 +67,10 @@ def main():
     print(f"Loaded {len(documents)} documents.")
 
     print("Splitting documents into chunks...")
-    text_splitter = RecursiveCharacterTextSplitter(chunk_size=1000, chunk_overlap=200)
+    text_splitter = RecursiveCharacterTextSplitter(
+        chunk_size=2000,
+        chunk_overlap=400
+    )
     docs = text_splitter.split_documents(documents)
     print(f"Split into {len(docs)} chunks.")
 
@@ -108,35 +134,107 @@ def main():
     llm = ChatOpenAI(
         temperature=0.7,
         model_name=args.model,
-        openai_api_key=OPENAI_API_KEY
+        max_tokens=2000  # Reserve tokens for response
     )
+    retriever = vectorstore.as_retriever(
+        search_kwargs={
+            "k": 8,  # Reduced from previous value
+            "score_threshold": 0.7,
+            "fetch_k": 20  # Fetch more but filter down
+        }
+    )
+
+    def get_relevant_context(query: str, retriever) -> List[Dict]:
+        """Get relevant context while managing token limits."""
+        docs = retriever.get_relevant_documents(query)
+        return truncate_docs_to_token_limit(docs, max_tokens=6000)  # Leave room for prompt and response
+
+    # Add a custom prompt template
+    template = """You are an insightful conversation analyst. Analyze these chat messages in detail.
+Focus on relationship dynamics, patterns, and meaningful interactions.
+
+Context from messages: {context}
+Chat history: {chat_history}
+
+Question: {question}
+Detailed Analysis:"""
+
+    prompt = PromptTemplate(
+        input_variables=["context", "chat_history", "question"],
+        template=template
+    )
+
     qa = ConversationalRetrievalChain.from_llm(
         llm,
-        vectorstore.as_retriever(),
-        return_source_documents=True
+        retriever,
+        combine_docs_chain_kwargs={
+            'prompt': prompt,
+            'document_prompt': PromptTemplate(
+                input_variables=["page_content"],
+                template="{page_content}"
+            )
+        },
+        return_source_documents=True,
+        verbose=True  # Add this to see what's happening
     )
+
+    def analyze_conversation(query, chat_history=[]):
+        """Get deeper analysis with multiple perspectives"""
+        max_tokens = 8000
+        analyses = []
+        
+        with get_openai_callback() as cb:
+            # Core question
+            result = qa({
+                "question": query,
+                "chat_history": chat_history
+            })
+            analyses.append(("Main Analysis", result["answer"]))
+            print(f"\nTokens used: {cb.total_tokens} (Input: {cb.prompt_tokens}, Output: {cb.completion_tokens})")
+            
+            # Only do follow-ups if we haven't used too many tokens
+            if cb.total_tokens < max_tokens:
+                follow_ups = [
+                    "What emotions and relationship dynamics are evident?",
+                    "What interesting patterns or changes can you identify?",
+                    "What shared experiences or inside jokes stand out?"
+                ]
+                
+                for follow_up in follow_ups:
+                    result = qa({
+                        "question": follow_up,
+                        "chat_history": chat_history + analyses
+                    })
+                    analyses.append((follow_up, result["answer"]))
+        
+        return analyses
 
     def chat():
         print("Chat with your Facebook Messenger AI (type 'exit' to quit):")
         chat_history = []
+        
         while True:
-            query = input("You: ")
+            query = input("\nYou: ")
             if query.lower() in ('exit', 'quit'):
-                print("Exiting chat.")
                 break
-            if not query.strip():
-                continue
-
-            result = qa({"question": query, "chat_history": chat_history})
-            answer = result["answer"]
-            print(f"\nAI: {answer}\n")
-
-            if "source_documents" in result:
-                sources = [doc.page_content[:400] for doc in result["source_documents"][:3]]
-                sources_json = json.dumps({"sources": sources}, indent=2)
-                print(f"\nSources: {sources_json}")
-
-            chat_history.append((query, answer))
+            
+            try:
+                with get_openai_callback() as cb:
+                    result = qa({"question": query, "chat_history": chat_history})
+                    print(f"\nAI: {result['answer']}")
+                    print(f"\nTokens used: {cb.total_tokens} (Input: {cb.prompt_tokens}, Output: {cb.completion_tokens})")
+                    
+                    if "source_documents" in result:
+                        print("\nBased on these conversations:")
+                        for i, doc in enumerate(result["source_documents"][:5], 1):
+                            print(f"\n{i}. {doc.page_content[:300]}...")
+                    
+                    chat_history.append((query, result["answer"]))
+                    
+            except Exception as e:
+                print(f"\nError: {str(e)}")
+                print("Trying again with reduced context...")
+                # Could add retry logic here with reduced context
 
     chat()
 
